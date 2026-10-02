@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cahier de registre</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f6b4f">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Registre"><link rel="apple-touch-icon" href="icon-180.png">
+<script src="config.js"></script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f6f4ef;--card:#fff;--tx:#1d1d1b;--mut:#6b6b66;--bd:#e2ded4;--ac:#0f6b4f;--in:#1e5fbf;--out:#c2410c;--bad:#b91c1c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141513;--card:#1f211e;--tx:#f0efe9;--mut:#a3a39b;--bd:#33362f;--ac:#34d399;--in:#7db1ff;--out:#fb923c;--bad:#f87171}}
+:root[data-theme="dark"]{--bg:#141513;--card:#1f211e;--tx:#f0efe9;--mut:#a3a39b;--bd:#33362f;--ac:#34d399;--in:#7db1ff;--out:#fb923c;--bad:#f87171}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:0 0 10px}
+h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select,button{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+input{min-width:0}
+.grow{flex:1 1 120px}
+button{cursor:pointer;font-weight:600;border:0;color:#fff}
+.b-in{background:var(--in)}.b-out{background:var(--out)}.b-g{background:var(--mut)}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.stat{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;text-align:center}
+.stat b{display:block;font-size:24px}
+.stat span{font-size:12px;color:var(--mut)}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:normal}
+tfoot td{font-weight:700;border-top:2px solid var(--tx)}
+.reste{font-weight:700;color:var(--ac)}
+.low{color:var(--bad)}
+textarea{width:100%;box-sizing:border-box;min-height:70px;font:13px monospace;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.msg{color:var(--bad);font-size:14px;min-height:18px;margin-top:6px}
+.op{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);font-size:14px}
+.op button{background:none;color:var(--bad);padding:4px 8px;font-size:18px}
+.mut{color:var(--mut);font-size:13px}
+.prOnly{display:none}
+[hidden]{display:none!important}
+.gate{max-width:420px;margin:12vh auto;padding:16px}.gate input{width:100%;box-sizing:border-box;margin:8px 0;text-transform:uppercase;letter-spacing:2px;text-align:center}
+@media print{
+:root,:root:not([data-theme="light"]),:root[data-theme="dark"]{--bg:#fff;--card:#fff;--tx:#000;--mut:#333;--bd:#999;--ac:#000;--in:#000;--out:#000;--bad:#000}
+body{background:#fff;color:#000}
+.card:not(.pr),.mut,.op button{display:none!important}
+.prOnly{display:block;font-size:15px;margin-bottom:10px;text-transform:capitalize}
+.card,.stat{break-inside:avoid;border-color:#999}
+.wrap{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div id="gate" class="gate" hidden>
+  <h1>🔐 Activation</h1>
+  <p class="mut">Entre la clé de licence donnée par ton vendeur. Elle fonctionne sur un seul appareil.</p>
+  <input id="gKey" placeholder="XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off">
+  <button class="b-in" id="gGo" style="width:100%">Activer</button>
+  <div class="msg" id="gMsg"></div>
+</div>
+<main id="app" hidden>
+<h1>📒 Cahier de registre</h1>
+<div id="prDate" class="prOnly"></div>
+
+<div class="card row">
+  <input type="date" id="date" class="grow" aria-label="Date de la session">
+  <button class="b-g" id="today">Aujourd'hui</button>
+  <button class="b-in" id="print">🖨️ Télécharger / Imprimer</button>
+  <div class="msg" id="prMsg" style="width:100%"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="sIn">0</b><span>Arrivé ce jour</span></div>
+  <div class="stat"><b id="sOut">0</b><span>Vendu ce jour</span></div>
+  <div class="stat"><b id="sRest">0</b><span>Reste total</span></div>
+  <div class="stat"><b id="sMoney">0</b><span>Recette du jour (FCFA)</span></div>
+</div>
+
+<div class="card">
+  <h2>📦 Arrivage de marchandise</h2>
+  <div class="row">
+    <input id="inName" class="grow" list="names" placeholder="Article (ex: Jean bale)" autocomplete="off">
+    <input id="inQty" type="number" min="1" inputmode="numeric" placeholder="Nombre" style="width:100px">
+    <button class="b-in" id="addIn">Ajouter</button>
+  </div>
+  <datalist id="names"></datalist>
+</div>
+
+<div class="card">
+  <h2>🛒 Vente</h2>
+  <div class="row">
+    <select id="outName" class="grow"></select>
+    <input id="outQty" type="number" min="1" inputmode="numeric" placeholder="Nombre" style="width:100px">
+    <input id="outPrice" type="number" min="0" inputmode="numeric" placeholder="Prix unitaire FCFA" style="width:130px">
+    <button class="b-out" id="addOut">Vendre</button>
+  </div>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="card pr">
+  <h2>Stock par article</h2>
+  <div class="wrap">
+  <table>
+    <thead><tr><th>Article</th><th>Veille</th><th>Arrivé</th><th>Vendu</th><th>Reste</th></tr></thead>
+    <tbody id="tb"></tbody>
+    <tfoot id="tf"></tfoot>
+  </table>
+  </div>
+</div>
+
+<div class="card pr">
+  <h2>Opérations du jour</h2>
+  <div id="ops"></div>
+</div>
+<div class="card">
+  <h2>💾 Sauvegarde</h2>
+  <textarea id="bkTxt" placeholder="La sauvegarde apparaît ici. Pour restaurer, colle-la ici puis appuie sur Restaurer."></textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="b-in" id="bkGen">Copier la sauvegarde</button>
+    <button class="b-g" id="bkRes">Restaurer (remplace tout)</button>
+  </div>
+  <div class="mut" id="bkMsg" style="margin-top:6px"></div>
+</div>
+<p class="mut">Les données sont gardées sur cet appareil (même navigateur). Le reste d'une journée passe automatiquement au lendemain.</p>
+</main>
+<script>
+const KEY='cahier-friperie-v1';
+let ops=[];
+try{ops=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){ops=[]}
+const $=id=>document.getElementById(id);
+const iso=d=>{const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())};
+let sel=iso(new Date());
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const key=s=>s.trim().toLowerCase();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}}
+function compute(){
+  const m={};
+  ops.filter(o=>o.date<=sel).forEach(o=>{
+    const k=key(o.article);
+    const r=m[k]||(m[k]={name:o.article,veille:0,in:0,out:0});
+    const s=o.type==='in'?1:-1;
+    if(o.date<sel) r.veille+=s*o.qty;
+    else if(o.type==='in') r.in+=o.qty; else r.out+=o.qty;
+  });
+  return Object.values(m).map(r=>({...r,reste:r.veille+r.in-r.out})).sort((a,b)=>a.name.localeCompare(b.name));
+}
+function render(){
+  $('date').value=sel;
+  $('prDate').textContent='Journée du '+new Date(sel+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const rows=compute();
+  const t={veille:0,in:0,out:0,reste:0};
+  rows.forEach(r=>{for(const k in t)t[k]+=r[k]});
+  $('tb').innerHTML=rows.length?rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.veille}</td><td>${r.in||'-'}</td><td>${r.out||'-'}</td><td class="reste ${r.reste<=0?'low':''}">${r.reste}</td></tr>`).join(''):'<tr><td colspan="5" class="mut">Aucun article. Ajoute un arrivage pour commencer.</td></tr>';
+  $('tf').innerHTML=`<tr><td>TOTAL</td><td>${t.veille}</td><td>${t.in}</td><td>${t.out}</td><td>${t.reste}</td></tr>`;
+  $('sMoney').textContent=ops.filter(o=>o.date===sel&&o.type==='out').reduce((a,o)=>a+o.qty*(o.price||0),0).toLocaleString('fr-FR');
+  $('sIn').textContent=t.in;$('sOut').textContent=t.out;$('sRest').textContent=t.reste;
+  $('names').innerHTML=rows.map(r=>`<option value="${esc(r.name)}">`).join('');
+  const cur=$('outName').value;
+  $('outName').innerHTML=rows.filter(r=>r.reste>0).map(r=>`<option value="${esc(r.name)}">${esc(r.name)} (reste ${r.reste})</option>`).join('')||'<option value="">— aucun stock —</option>';
+  if(cur)$('outName').value=cur;
+  if(!$('outPrice').value)prefill();
+  const day=ops.filter(o=>o.date===sel).slice().reverse();
+  $('ops').innerHTML=day.length?day.map(o=>`<div class="op"><span>${o.type==='in'?'📦 +':'🛒 −'}${o.qty} · ${esc(o.article)}${o.type==='out'&&o.price?' · '+o.price.toLocaleString('fr-FR')+' F/u · '+(o.qty*o.price).toLocaleString('fr-FR')+' F':''} <span class="mut">${o.time||''}</span></span><button aria-label="Supprimer" data-id="${o.id}">✕</button></div>`).join(''):'<div class="mut">Rien noté pour cette date.</div>';
+}
+function prefill(){
+  const n=key($('outName').value||'');
+  const l=ops.filter(o=>o.type==='out'&&o.price&&key(o.article)===n).pop();
+  $('outPrice').value=l?l.price:'';
+}
+function add(type,name,qty,price){
+  ops.push({id:Date.now()+Math.random(),date:sel,time:new Date().toTimeString().slice(0,5),type,article:name.trim(),qty,price:price||0});
+  save();render();
+}
+$('addIn').onclick=()=>{
+  const n=$('inName').value,q=parseInt($('inQty').value,10);
+  if(!n.trim()||!(q>0)){$('msg').textContent='Entre un article et un nombre.';return}
+  $('msg').textContent='';add('in',n,q);$('inName').value='';$('inQty').value='';
+};
+$('addOut').onclick=()=>{
+  const n=$('outName').value,q=parseInt($('outQty').value,10);
+  if(!n||!(q>0)){$('msg').textContent='Choisis un article et un nombre.';return}
+  const r=compute().find(x=>key(x.name)===key(n));
+  if(!r||q>r.reste){$('msg').textContent='Stock insuffisant : il reste seulement '+(r?r.reste:0)+'.';return}
+  $('msg').textContent='';add('out',n,q,parseInt($('outPrice').value,10)||0);$('outQty').value='';
+};
+$('ops').onclick=e=>{const id=e.target.dataset.id;if(id){ops=ops.filter(o=>String(o.id)!==id);save();render()}};
+$('outName').onchange=prefill;
+$('bkGen').onclick=async()=>{const t=JSON.stringify(ops);$('bkTxt').value=t;$('bkTxt').select();let ok=false;try{await navigator.clipboard.writeText(t);ok=true}catch(e){}$('bkMsg').textContent=ok?'Copié ! Colle-le dans une note ou un message pour le garder.':'Copie le texte ci-dessus pour le garder.'};
+$('bkRes').onclick=()=>{try{const a=JSON.parse($('bkTxt').value);if(!Array.isArray(a)||a.some(o=>!o.date||!o.article||!(o.qty>0)))throw 0;ops=a;save();render();$('bkMsg').textContent='Restauré : '+a.length+' opérations.'}catch(e){$('bkMsg').textContent='Texte invalide.'}};
+function printHTML(){
+  const rows=compute();
+  const t={veille:0,in:0,out:0,reste:0};rows.forEach(r=>{for(const k in t)t[k]+=r[k]});
+  const money=ops.filter(o=>o.date===sel&&o.type==='out').reduce((a,o)=>a+o.qty*(o.price||0),0);
+  const jour=new Date(sel+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const day=ops.filter(o=>o.date===sel).slice().reverse();
+  const trs=rows.length?rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.veille}</td><td>${r.in||'-'}</td><td>${r.out||'-'}</td><td><b>${r.reste}</b></td></tr>`).join(''):'<tr><td colspan="5">Aucun article</td></tr>';
+  const opsHtml=day.length?day.map(o=>`<div class="op">${o.type==='in'?'Arrivage':'Vente'} : ${o.qty} × ${esc(o.article)}${o.type==='out'&&o.price?' — '+o.price.toLocaleString('fr-FR')+' F/u — '+(o.qty*o.price).toLocaleString('fr-FR')+' F':''} <span class="t">${o.time||''}</span></div>`).join(''):'<div>Rien noté</div>';
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Cahier de registre - ${esc(jour)}</title>
+<style>body{font:14px/1.4 system-ui,sans-serif;color:#000;margin:20px}h1{font-size:18px;text-transform:capitalize}
+table{width:100%;border-collapse:collapse;margin:10px 0}th,td{border-bottom:1px solid #999;padding:6px;text-align:right}th:first-child,td:first-child{text-align:left}
+tfoot td{font-weight:700;border-top:2px solid #000}.stats{margin:10px 0}.op{border-bottom:1px solid #ccc;padding:4px 0}.t{color:#555;font-size:12px}</style></head>
+<body onload="setTimeout(()=>window.print(),200)">
+<h1>📒 Cahier de registre — ${esc(jour)}</h1>
+<div class="stats">Arrivé : ${t.in} · Vendu : ${t.out} · Reste total : ${t.reste} · Recette du jour : ${money.toLocaleString('fr-FR')} FCFA</div>
+<table><thead><tr><th>Article</th><th>Veille</th><th>Arrivé</th><th>Vendu</th><th>Reste</th></tr></thead><tbody>${trs}</tbody>
+<tfoot><tr><td>TOTAL</td><td>${t.veille}</td><td>${t.in}</td><td>${t.out}</td><td>${t.reste}</td></tr></tfoot></table>
+<h2>Opérations du jour</h2>${opsHtml}
+</body></html>`;
+}
+let printed=false;
+let dlCap=null;
+if(window.claude&&window.claude.use){claude.use('downloads').then(d=>dlCap=d).catch(()=>{})}
+$('print').onclick=async()=>{
+  $('prMsg').textContent='';
+  const html=printHTML();
+  const fname='cahier-registre-'+sel+'.html';
+  if(dlCap){
+    try{
+      await dlCap.save({filename:fname,data:html});
+      $('prMsg').textContent="Fichier enregistré. Ouvre-le depuis tes téléchargements dans Chrome : l'impression se lance toute seule, ou utilise le menu ⋮ > Imprimer.";
+    }catch(e){
+      if(e&&e.code==='declined')return;
+      $('prMsg').textContent="L'enregistrement n'a pas fonctionné ("+(e&&e.code||'erreur')+"). Réessaie, ou copie le lien de la page et ouvre-le hors de Claude.";
+    }
+    return;
+  }
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');
+  if(!w)$('prMsg').textContent="La fenêtre a été bloquée. Autorise les pop-ups pour ce site, ou fais un appui long sur le bouton pour ouvrir dans un nouvel onglet.";
+};
+$('date').onchange=e=>{if(e.target.value){sel=e.target.value;render()}};
+$('today').onclick=()=>{sel=iso(new Date());render()};
+const LK='cahier-licence-v1',DK='cahier-appareil-v1',DAY=864e5;
+function devId(){let d=null;try{d=localStorage.getItem(DK)}catch(e){}
+  if(!d){d=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);try{localStorage.setItem(DK,d)}catch(e){}}return d}
+function getLic(){try{return JSON.parse(localStorage.getItem(LK))}catch(e){return null}}
+function setLic(l){try{l?localStorage.setItem(LK,JSON.stringify(l)):localStorage.removeItem(LK)}catch(e){}}
+async function verify(key){const r=await fetch((window.API_BASE||'')+'/api/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,deviceId:devId()})});const j=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,error:j.error||'Erreur, réessaie.'}}
+function gate(m){$('app').hidden=true;$('gate').hidden=false;$('gMsg').textContent=m||''}
+function openApp(){$('gate').hidden=true;$('app').hidden=false}
+async function boot(){
+  const l=getLic();if(!l){gate();return}
+  if(Date.now()-l.checkedAt<DAY){openApp();return}
+  let r=null;try{r=await verify(l.key)}catch(e){}
+  if(r&&r.ok){l.checkedAt=Date.now();setLic(l);openApp()}
+  else if(r&&[403,404,409].includes(r.status)){setLic(null);gate(r.error)}
+  else if(Date.now()-l.checkedAt<7*DAY)openApp();
+  else gate('Connexion internet requise pour vérifier la licence.');
+}
+$('gGo').onclick=async()=>{
+  const k=$('gKey').value.trim().toUpperCase();if(!k)return;
+  $('gMsg').textContent='Vérification…';
+  try{const r=await verify(k);if(r.ok){setLic({key:k,checkedAt:Date.now()});openApp()}else $('gMsg').textContent=r.error}
+  catch(e){$('gMsg').textContent='Pas de connexion. Réessaie avec internet.'}
+};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();boot();
+</script>
+</body>
+</html>
