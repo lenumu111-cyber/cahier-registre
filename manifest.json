@@ -1,16 +1,1 @@
-{
-  "name": "Atelier Couture",
-  "short_name": "Atelier",
-  "description": "Mesures, modèles et commandes pour couturiers",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#faf6f0",
-  "theme_color": "#b4531f",
-  "lang": "fr",
-  "icons": [
-    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
-    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
-  ]
-}
+{"name":"Cahier de registre","short_name":"Registre","start_url":"./","scope":"./","display":"standalone","background_color":"#0f6b4f","theme_color":"#0f6b4f","lang":"fr","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
