@@ -80,6 +80,14 @@ body{background:#fff;color:#000}
 <div id="bkWarn" class="card" hidden style="border-color:var(--bad)">
   <div class="row"><span id="bkWarnTx" class="grow" style="font-size:14px"></span><button class="b-in" id="bkWarnBtn">Sauvegarder maintenant</button></div>
 </div>
+<div id="cloudAsk" class="card" hidden style="border-color:var(--in)">
+  <div id="cloudAskTx" style="font-size:14px;margin-bottom:8px"></div>
+  <div class="row">
+    <button class="b-ok grow" id="cloudAskYes">Restaurer</button>
+    <button class="b-g grow" id="cloudAskNo">Plus tard</button>
+  </div>
+  <div class="msg" id="cloudAskMsg"></div>
+</div>
 <div id="prDate" class="prOnly"></div>
 
 <div class="card row">
@@ -150,6 +158,15 @@ body{background:#fff;color:#000}
 </div>
 <div class="card">
   <h2>💾 Sauvegarde</h2>
+  <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bd)">
+    <div id="cloudSt" style="font-size:14px"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="b-ok" id="cloudNow">☁️ Sauvegarder en ligne maintenant</button>
+      <button class="b-g" id="cloudRes">Restaurer depuis la sauvegarde en ligne</button>
+    </div>
+    <div class="mut" id="cloudMsg" style="margin-top:6px"></div>
+  </div>
+  <div class="mut" style="margin-bottom:6px">Sauvegarde manuelle (copie de secours) :</div>
   <textarea id="bkTxt" placeholder="La sauvegarde apparaît ici. Pour restaurer, colle-la ici puis appuie sur Restaurer."></textarea>
   <div class="row" style="margin-top:8px">
     <button class="b-in" id="bkGen">Copier la sauvegarde</button>
@@ -170,15 +187,15 @@ let follow=true; // true = l'écran suit automatiquement le jour qui change
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const key=s=>String(s||'').trim().toLowerCase();
 const fmt=n=>Number(n||0).toLocaleString('fr-FR');
-function save(){try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}S.dirty=true;saveS();scheduleSync()}
 const BK='cahier-derniere-sauvegarde-v1';
 function lastBk(){try{return +localStorage.getItem(BK)||0}catch(e){return 0}}
 function checkBk(){
   const w=$('bkWarn');
-  if(!ops.length){w.hidden=true;return}
+  if(!ops.length||(S.init&&!S.dirty)){w.hidden=true;return}
   const l=lastBk(),days=l?Math.floor((Date.now()-l)/864e5):null;
   if(l&&days<7){w.hidden=true;return}
-  $('bkWarnTx').textContent=l?'⚠️ Dernière sauvegarde il y a '+days+' jour(s). Si le téléphone est perdu ou réinitialisé, tout le cahier disparaît.':'⚠️ Aucune sauvegarde faite. Si le téléphone est perdu ou réinitialisé, tout le cahier disparaît.';
+  $('bkWarnTx').textContent=l?'Dernière sauvegarde il y a '+days+' jour(s).':'Aucune sauvegarde faite.';
   w.hidden=false;
 }
 
@@ -261,7 +278,7 @@ function render(){
   $('debtCard').hidden=!curDebts.length;
   $('debts').innerHTML=curDebts.map((d,i)=>`<div class="dt"><div><b>${esc(d.name)}</b> doit <b class="low">${fmt(d.due)} F</b></div><div class="row"><input type="number" min="1" inputmode="numeric" placeholder="Montant reçu (FCFA)" data-i="${i}" aria-label="Montant reçu de ${esc(d.name)}"><button class="b-ok" data-pay="${i}">Encaisser</button></div></div>`).join('');
   $('buyers').innerHTML=Object.values(ops.filter(o=>o.type==='out'&&o.credit&&o.buyer).reduce((m,o)=>{m[key(o.buyer)]=o.buyer;return m},{})).map(n=>`<option value="${esc(n)}">`).join('');
-  checkBk();
+  checkBk();cloudUI();
   const day=ops.filter(o=>o.date===sel).slice().reverse();
   const ic={in:'📦 +',out:'🛒 −',pay:'💵 '};
   $('ops').innerHTML=day.length?day.map(o=>`<div class="op"><span>${ic[o.type]||''}${opText(o)} <span class="mut">${o.time||''}</span></span><button aria-label="Supprimer" data-id="${o.id}">✕</button></div>`).join(''):'<div class="mut">Rien noté pour cette date.</div>';
@@ -388,6 +405,143 @@ $('print').onclick=async()=>{
 $('date').onchange=e=>{if(e.target.value){sel=e.target.value;follow=(sel===iso(new Date()));render()}};
 $('today').onclick=()=>{follow=true;sel=iso(new Date());render()};
 
+/* ---------- Sauvegarde en ligne ---------- */
+const SK='cahier-sync-v1';
+let S={init:false,map:{},dirty:false,last:0};
+try{const x=JSON.parse(localStorage.getItem(SK));if(x&&typeof x==='object')S=Object.assign(S,x)}catch(e){}
+function saveS(){try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}}
+function hash(s){let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)+'.'+s.length}
+const fmtDT=t=>t?new Date(t).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
+function dayData(){const m={};ops.forEach(o=>{(m[o.date]||(m[o.date]=[])).push(o)});const r={};for(const d in m)r[d]=JSON.stringify(m[d]);return r}
+async function cloud(path,body){
+  const l=getLic();if(!l)throw new Error('Licence absente.');
+  const r=await fetch((window.API_BASE||'')+'/api/backup/'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({key:l.key,deviceId:devId()},body||{}))});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){const e=new Error(j.error||('Erreur '+r.status));e.status=r.status;throw e}
+  return j;
+}
+let syncTimer=null,syncing=false,lastTry=0,cloudBlocked=false,askMode='',lastAskSt=null;
+function scheduleSync(delay){
+  if(syncTimer||!getLic())return;
+  const wait=delay!=null?delay:Math.max(30000,lastTry+300000-Date.now());
+  syncTimer=setTimeout(()=>{syncTimer=null;syncNow()},wait);
+}
+function startCloud(){if(!S.init||S.dirty)scheduleSync(3000)}
+function cloudUI(){
+  if(!getLic()){$('cloudSt').textContent='';return}
+  let t;
+  if(cloudBlocked)t=$('cloudAsk').hidden?'⏸ Sauvegarde en ligne en pause : une ancienne sauvegarde existe. Utilise « Restaurer depuis la sauvegarde en ligne » pour la récupérer.':'❓ Sauvegarde en ligne : une question t\'attend en haut de la page.';
+  else if(!S.init)t='☁️ Sauvegarde en ligne : pas encore activée (elle démarre avec internet).';
+  else if(S.dirty)t='⏳ Sauvegarde en ligne en attente : les dernières modifications ne sont pas encore envoyées'+(navigator.onLine===false?' (pas de connexion).':'.');
+  else t='✅ Sauvegardé en ligne le '+fmtDT(S.last)+'.';
+  $('cloudSt').textContent=t;
+}
+async function pushDays(ch,wipe){
+  const ds=Object.keys(ch);if(!ds.length&&!wipe)return;
+  let chunk={},size=0,n=0,first=true;
+  const flush=async()=>{
+    if(!n&&!(wipe&&first))return;
+    await cloud('put',{days:chunk,wipe:!!(wipe&&first)});
+    for(const d in chunk){if(chunk[d]===null)delete S.map[d];else S.map[d]=hash(chunk[d])}
+    saveS();chunk={};size=0;n=0;first=false;
+  };
+  for(const d of ds){
+    const v=ch[d],len=v?v.length:0;
+    if(n&&(size+len>200000||n>=30))await flush();
+    chunk[d]=v;size+=len;n++;
+  }
+  await flush();
+}
+function askCloud(st){
+  cloudBlocked=true;lastAskSt=st;
+  askMode=ops.length?'choose':'restore';
+  $('cloudAskTx').textContent=askMode==='restore'
+    ?'☁️ Une sauvegarde en ligne de ton cahier existe ('+st.count+' jour(s) de données, mise à jour le '+fmtDT(st.last)+'). Veux-tu la restaurer sur ce téléphone ?'
+    :'☁️ Une sauvegarde en ligne existe déjà ('+st.count+' jour(s), mise à jour le '+fmtDT(st.last)+') et ce téléphone contient aussi des données. Laquelle garder ?';
+  $('cloudAskYes').textContent=askMode==='restore'?'Restaurer':'Garder la sauvegarde en ligne';
+  $('cloudAskNo').textContent=askMode==='restore'?'Plus tard':'Garder ce téléphone';
+  $('cloudAskMsg').textContent='';
+  $('cloudAsk').hidden=false;
+}
+async function syncNow(manual){
+  if(syncing)return;
+  if(!getLic()){cloudUI();return}
+  if(navigator.onLine===false){cloudUI();if(manual)$('cloudMsg').textContent='Pas de connexion internet.';return}
+  if(cloudBlocked){
+    if(askMode==='restore'&&ops.length&&lastAskSt){askCloud(lastAskSt)} // nouvelles données saisies : il faut choisir quoi garder
+    else if(manual){$('cloudMsg').textContent="Réponds d'abord à la question affichée en haut de la page.";$('cloudAsk').hidden=false}
+    cloudUI();return;
+  }
+  syncing=true;lastTry=Date.now();
+  if(manual)$('cloudMsg').textContent='Envoi en cours…';
+  try{
+    if(!S.init){
+      const st=await cloud('status');
+      if(st.count>0){askCloud(st);return}
+      S.init=true;S.map={};saveS();
+    }
+    const cur=dayData(),ch={};
+    for(const d in cur){if(S.map[d]!==hash(cur[d]))ch[d]=cur[d]}
+    for(const d in S.map){if(!(d in cur))ch[d]=null}
+    await pushDays(ch,false);
+    S.dirty=false;S.last=Date.now();saveS();
+    $('cloudMsg').textContent=manual?'Sauvegardé en ligne ✔':'';
+  }catch(e){
+    $('cloudMsg').textContent=e.status?('Sauvegarde en ligne : '+e.message):(manual?'Pas de connexion. Réessaie avec internet.':'');
+    if(!e.status)scheduleSync();
+  }finally{syncing=false;cloudUI();checkBk()}
+}
+async function restoreCloud(){
+  const all=[];let after='';
+  for(let i=0;i<500;i++){
+    const j=await cloud('get',{after,limit:30});
+    for(const r of j.rows){let a;try{a=JSON.parse(r.data)}catch(e){after=r.day;continue}if(Array.isArray(a)){for(const o of a)if(o&&o.date&&o.article&&o.qty>0)all.push(o)}after=r.day}
+    if(!j.more)break;
+  }
+  ops=all;
+  try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}
+  const cur=dayData();S.map={};for(const d in cur)S.map[d]=hash(cur[d]);
+  S.init=true;S.dirty=false;S.last=Date.now();saveS();
+  cloudBlocked=false;$('cloudAsk').hidden=true;
+  render();
+  return all.length;
+}
+async function keepThisPhone(){
+  const cur=dayData();S.map={};S.init=true;saveS();
+  await pushDays(cur,true);
+  S.dirty=false;S.last=Date.now();saveS();
+  cloudBlocked=false;$('cloudAsk').hidden=true;cloudUI();checkBk();
+}
+$('cloudNow').onclick=()=>syncNow(true);
+$('cloudRes').onclick=async()=>{
+  $('cloudMsg').textContent='Recherche de la sauvegarde…';
+  try{
+    const st=await cloud('status');
+    if(!(st.count>0)){$('cloudMsg').textContent="Aucune sauvegarde en ligne n'existe encore.";return}
+    if(!confirm('Remplacer TOUT le cahier de ce téléphone par la sauvegarde en ligne du '+fmtDT(st.last)+' ?'))return $('cloudMsg').textContent='';
+    const n=await restoreCloud();
+    $('cloudMsg').textContent='Restauré : '+n+' opération(s).';
+  }catch(e){$('cloudMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
+};
+$('cloudAskYes').onclick=async()=>{
+  $('cloudAskMsg').textContent='En cours…';
+  try{
+    if(askMode==='choose'&&!confirm('Remplacer le cahier de ce téléphone par la sauvegarde en ligne ?'))return $('cloudAskMsg').textContent='';
+    const n=await restoreCloud();
+    $('cloudMsg').textContent='Restauré : '+n+' opération(s).';
+  }catch(e){$('cloudAskMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
+};
+$('cloudAskNo').onclick=async()=>{
+  if(askMode==='restore'){$('cloudAsk').hidden=true;return} // plus tard : rien n'est envoyé tant que tu n'as pas choisi
+  if(!confirm('Remplacer la sauvegarde en ligne par le contenu de ce téléphone ?'))return;
+  $('cloudAskMsg').textContent='En cours…';
+  try{await keepThisPhone()}catch(e){$('cloudAskMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
+};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.dirty&&!syncing&&S.init)syncNow()});
+window.addEventListener('online',()=>{if(S.dirty||!S.init)scheduleSync(2000)});
+
 /* ---------- Licence (inchangé) ---------- */
 const LK='cahier-licence-v1',DK='cahier-appareil-v1',DAY=864e5;
 function devId(){let d=null;try{d=localStorage.getItem(DK)}catch(e){}
@@ -396,7 +550,7 @@ function getLic(){try{return JSON.parse(localStorage.getItem(LK))}catch(e){retur
 function setLic(l){try{l?localStorage.setItem(LK,JSON.stringify(l)):localStorage.removeItem(LK)}catch(e){}}
 async function verify(key){const r=await fetch((window.API_BASE||'')+'/api/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,deviceId:devId()})});const j=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,error:j.error||'Erreur, réessaie.'}}
 function gate(m){$('app').hidden=true;$('gate').hidden=false;$('gMsg').textContent=m||''}
-function openApp(){$('gate').hidden=true;$('app').hidden=false;try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}}
+function openApp(){$('gate').hidden=true;$('app').hidden=false;startCloud();try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}}
 async function boot(){
   const l=getLic();if(!l){gate();return}
   if(Date.now()-l.checkedAt<DAY){openApp();return}
