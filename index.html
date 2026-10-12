@@ -80,14 +80,6 @@ body{background:#fff;color:#000}
 <div id="bkWarn" class="card" hidden style="border-color:var(--bad)">
   <div class="row"><span id="bkWarnTx" class="grow" style="font-size:14px"></span><button class="b-in" id="bkWarnBtn">Sauvegarder maintenant</button></div>
 </div>
-<div id="cloudAsk" class="card" hidden style="border-color:var(--in)">
-  <div id="cloudAskTx" style="font-size:14px;margin-bottom:8px"></div>
-  <div class="row">
-    <button class="b-ok grow" id="cloudAskYes">Restaurer</button>
-    <button class="b-g grow" id="cloudAskNo">Plus tard</button>
-  </div>
-  <div class="msg" id="cloudAskMsg"></div>
-</div>
 <div id="prDate" class="prOnly"></div>
 
 <div class="card row">
@@ -187,7 +179,8 @@ let follow=true; // true = l'écran suit automatiquement le jour qui change
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const key=s=>String(s||'').trim().toLowerCase();
 const fmt=n=>Number(n||0).toLocaleString('fr-FR');
-function save(){try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}S.dirty=true;saveS();scheduleSync()}
+let chg=0;
+function save(){persist();chg++;S.dirty=true;saveS();scheduleSync()}
 const BK='cahier-derniere-sauvegarde-v1';
 function lastBk(){try{return +localStorage.getItem(BK)||0}catch(e){return 0}}
 function checkBk(){
@@ -349,12 +342,12 @@ $('debts').onclick=e=>{
   ops.push({id:Date.now()+Math.random(),date:sel,time:new Date().toTimeString().slice(0,5),type:'pay',article:'Paiement',qty:1,price:0,buyer:d.name,amount:a});
   save();render();
 };
-$('ops').onclick=e=>{const id=e.target.dataset.id;if(id){ops=ops.filter(o=>String(o.id)!==id);save();render()}};
+$('ops').onclick=e=>{const id=e.target.dataset.id;if(id){const o=ops.find(x=>String(x.id)===id);if(o)tomb.push({id:o.id,date:o.date,del:true,t:Date.now()});ops=ops.filter(x=>String(x.id)!==id);save();render()}};
 $('outName').onchange=prefill;
 $('inName').onchange=prefillCost;
 $('bkGen').onclick=async()=>{const t=JSON.stringify(ops);$('bkTxt').value=t;$('bkTxt').select();let ok=false;try{await navigator.clipboard.writeText(t);ok=true}catch(e){}try{localStorage.setItem(BK,String(Date.now()))}catch(e){}checkBk();$('bkMsg').textContent=ok?'Copié ! Colle-le dans une note ou un message (WhatsApp « Moi-même », e-mail) pour le garder.':'Copie le texte ci-dessus et garde-le dans une note ou un message.'};
 $('bkWarnBtn').onclick=()=>{$('bkGen').onclick();try{$('bkTxt').scrollIntoView({behavior:'smooth',block:'center'})}catch(e){}};
-$('bkRes').onclick=()=>{try{const a=JSON.parse($('bkTxt').value);if(!Array.isArray(a)||a.some(o=>!o.date||!o.article||!(o.qty>0)))throw 0;ops=a;save();render();$('bkMsg').textContent='Restauré : '+a.length+' opérations.'}catch(e){$('bkMsg').textContent='Texte invalide.'}};
+$('bkRes').onclick=()=>{try{const a=JSON.parse($('bkTxt').value);if(!Array.isArray(a)||a.some(o=>!o.date||!o.article||!(o.qty>0)))throw 0;a.forEach(o=>{if(o.id==null)o.id=Date.now()+Math.random()});const keep=new Set(a.map(o=>String(o.id)));ops.forEach(o=>{if(!keep.has(String(o.id)))tomb.push({id:o.id,date:o.date,del:true,t:Date.now()})});tomb=tomb.filter(t=>!keep.has(String(t.id)));ops=a;save();render();$('bkMsg').textContent='Restauré : '+a.length+' opérations.'}catch(e){$('bkMsg').textContent='Texte invalide.'}};
 
 /* ---------- Impression ---------- */
 function printHTML(){
@@ -405,114 +398,164 @@ $('print').onclick=async()=>{
 $('date').onchange=e=>{if(e.target.value){sel=e.target.value;follow=(sel===iso(new Date()));render()}};
 $('today').onclick=()=>{follow=true;sel=iso(new Date());render()};
 
-/* ---------- Sauvegarde en ligne ---------- */
-const SK='cahier-sync-v1';
-let S={init:false,map:{},dirty:false,last:0};
+/* ---------- Sauvegarde en ligne et synchronisation entre appareils ---------- */
+const SK='cahier-sync-v2',TK='cahier-tomb-v1';
+let S={init:false,vers:{},hashes:{},since:0,dirty:false,last:0};
 try{const x=JSON.parse(localStorage.getItem(SK));if(x&&typeof x==='object')S=Object.assign(S,x)}catch(e){}
+// Pierres tombales : une opération supprimée est mémorisée pour être supprimée aussi sur les autres appareils
+let tomb=[];
+try{const x=JSON.parse(localStorage.getItem(TK)||'[]');if(Array.isArray(x))tomb=x.filter(t=>t&&t.id!=null&&Date.now()-(t.t||0)<400*864e5)}catch(e){}
 function saveS(){try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(ops));localStorage.setItem(TK,JSON.stringify(tomb))}catch(e){}}
 function hash(s){let h1=0xdeadbeef,h2=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
   h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
   return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)+'.'+s.length}
 const fmtDT=t=>t?new Date(t).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
-function dayData(){const m={};ops.forEach(o=>{(m[o.date]||(m[o.date]=[])).push(o)});const r={};for(const d in m)r[d]=JSON.stringify(m[d]);return r}
+const byId=(a,b)=>a.id-b.id;
+function dayMap(){const m={};ops.forEach(o=>{(m[o.date]||(m[o.date]=[])).push(o)});tomb.forEach(t=>{(m[t.date]||(m[t.date]=[])).push(t)});for(const d in m)m[d].sort(byId);return m}
+// Fusion de deux listes d'une même journée : union des opérations, la suppression l'emporte
+function mergeEntries(a,b){
+  const m=new Map();
+  for(const e of a.concat(b)){
+    if(!e||e.id==null)continue;
+    const k=String(e.id),cur=m.get(k);
+    if(!cur){m.set(k,e);continue}
+    if(e.del&&!cur.del){m.set(k,e);continue}
+    if(!e.del&&cur.del)continue;
+    if(JSON.stringify(e)<JSON.stringify(cur))m.set(k,e);
+  }
+  return [...m.values()].sort(byId);
+}
+function applyDay(day,entries){
+  ops=ops.filter(o=>o.date!==day).concat(entries.filter(e=>!e.del));
+  tomb=tomb.filter(t=>t.date!==day).concat(entries.filter(e=>e.del));
+}
+function isMulti(){const l=getLic();return !!(l&&l.maxDevices>1)}
 async function cloud(path,body){
   const l=getLic();if(!l)throw new Error('Licence absente.');
   const r=await fetch((window.API_BASE||'')+'/api/backup/'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({key:l.key,deviceId:devId()},body||{}))});
   const j=await r.json().catch(()=>({}));
   if(!r.ok){const e=new Error(j.error||('Erreur '+r.status));e.status=r.status;throw e}
+  if(j.maxDevices&&l.maxDevices!==j.maxDevices){l.maxDevices=j.maxDevices;setLic(l)}
   return j;
 }
-let syncTimer=null,syncing=false,lastTry=0,cloudBlocked=false,askMode='',lastAskSt=null;
+let syncTimer=null,syncing=false,lastTry=0;
 function scheduleSync(delay){
   if(syncTimer||!getLic())return;
   const wait=delay!=null?delay:Math.max(30000,lastTry+300000-Date.now());
   syncTimer=setTimeout(()=>{syncTimer=null;syncNow()},wait);
 }
-function startCloud(){if(!S.init||S.dirty)scheduleSync(3000)}
+function startCloud(){if(!S.init||S.dirty||isMulti())scheduleSync(3000)}
 function cloudUI(){
   if(!getLic()){$('cloudSt').textContent='';return}
   let t;
-  if(cloudBlocked)t=$('cloudAsk').hidden?'⏸ Sauvegarde en ligne en pause : une ancienne sauvegarde existe. Utilise « Restaurer depuis la sauvegarde en ligne » pour la récupérer.':'❓ Sauvegarde en ligne : une question t\'attend en haut de la page.';
-  else if(!S.init)t='☁️ Sauvegarde en ligne : pas encore activée (elle démarre avec internet).';
+  if(!S.init)t='☁️ Sauvegarde en ligne : pas encore activée (elle démarre avec internet).';
   else if(S.dirty)t='⏳ Sauvegarde en ligne en attente : les dernières modifications ne sont pas encore envoyées'+(navigator.onLine===false?' (pas de connexion).':'.');
-  else t='✅ Sauvegardé en ligne le '+fmtDT(S.last)+'.';
+  else t=(isMulti()?'✅ Synchronisé avec tes autres appareils le ':'✅ Sauvegardé en ligne le ')+fmtDT(S.last)+'.';
   $('cloudSt').textContent=t;
 }
-async function pushDays(ch,wipe){
-  const ds=Object.keys(ch);if(!ds.length&&!wipe)return;
-  let chunk={},size=0,n=0,first=true;
+async function pullAll(since){
+  const rows=[];let after='';
+  for(let i=0;i<500;i++){
+    const j=await cloud('get',{after,since,limit:30});
+    for(const r of j.rows){rows.push(r);after=r.day}
+    if(!j.more)break;
+  }
+  return rows;
+}
+async function pushChunks(toPush){
+  const conflicts=[];
+  let chunk={},size=0,n=0;
   const flush=async()=>{
-    if(!n&&!(wipe&&first))return;
-    await cloud('put',{days:chunk,wipe:!!(wipe&&first)});
-    for(const d in chunk){if(chunk[d]===null)delete S.map[d];else S.map[d]=hash(chunk[d])}
-    saveS();chunk={};size=0;n=0;first=false;
+    if(!n)return;
+    const j=await cloud('put',{days:chunk});
+    const bad=new Set(j.conflicts||[]);
+    for(const d in chunk){
+      if(bad.has(d)){conflicts.push(d);continue}
+      S.vers[d]=(j.vers&&j.vers[d])||((chunk[d].v||0)+1);
+      S.hashes[d]=hash(chunk[d].d);
+    }
+    saveS();chunk={};size=0;n=0;
   };
-  for(const d of ds){
-    const v=ch[d],len=v?v.length:0;
-    if(n&&(size+len>200000||n>=30))await flush();
-    chunk[d]=v;size+=len;n++;
+  for(const d of Object.keys(toPush)){
+    const x=toPush[d];
+    if(n&&(size+x.s.length>200000||n>=30))await flush();
+    chunk[d]={d:x.s,v:x.base};size+=x.s.length;n++;
   }
   await flush();
-}
-function askCloud(st){
-  cloudBlocked=true;lastAskSt=st;
-  askMode=ops.length?'choose':'restore';
-  $('cloudAskTx').textContent=askMode==='restore'
-    ?'☁️ Une sauvegarde en ligne de ton cahier existe ('+st.count+' jour(s) de données, mise à jour le '+fmtDT(st.last)+'). Veux-tu la restaurer sur ce téléphone ?'
-    :'☁️ Une sauvegarde en ligne existe déjà ('+st.count+' jour(s), mise à jour le '+fmtDT(st.last)+') et ce téléphone contient aussi des données. Laquelle garder ?';
-  $('cloudAskYes').textContent=askMode==='restore'?'Restaurer':'Garder la sauvegarde en ligne';
-  $('cloudAskNo').textContent=askMode==='restore'?'Plus tard':'Garder ce téléphone';
-  $('cloudAskMsg').textContent='';
-  $('cloudAsk').hidden=false;
+  return conflicts;
 }
 async function syncNow(manual){
   if(syncing)return;
   if(!getLic()){cloudUI();return}
   if(navigator.onLine===false){cloudUI();if(manual)$('cloudMsg').textContent='Pas de connexion internet.';return}
-  if(cloudBlocked){
-    if(askMode==='restore'&&ops.length&&lastAskSt){askCloud(lastAskSt)} // nouvelles données saisies : il faut choisir quoi garder
-    else if(manual){$('cloudMsg').textContent="Réponds d'abord à la question affichée en haut de la page.";$('cloudAsk').hidden=false}
-    cloudUI();return;
-  }
   syncing=true;lastTry=Date.now();
-  if(manual)$('cloudMsg').textContent='Envoi en cours…';
+  const seq0=chg;let pending=false;
+  if(manual)$('cloudMsg').textContent='Synchronisation en cours…';
   try{
-    if(!S.init){
-      const st=await cloud('status');
-      if(st.count>0){askCloud(st);return}
-      S.init=true;S.map={};saveS();
+    let needPull=!S.init||isMulti();
+    for(let round=0;round<4;round++){
+      const toPush={},pulled=new Set();
+      let changed=false;
+      if(needPull){
+        const rows=await pullAll(Math.max(0,S.since-2000));
+        const dm=dayMap();
+        let maxU=S.since;
+        for(const r of rows){
+          let remote;try{remote=JSON.parse(r.data)}catch(e){continue}
+          if(!Array.isArray(remote))continue;
+          pulled.add(r.day);
+          const local=dm[r.day]||[];
+          const merged=mergeEntries(local,remote),ms=JSON.stringify(merged);
+          if(ms!==JSON.stringify(local)){applyDay(r.day,merged);changed=true}
+          S.vers[r.day]=r.ver||1;
+          if(hash(ms)===hash(r.data))S.hashes[r.day]=hash(ms);else toPush[r.day]={s:ms,base:r.ver||1};
+          if(r.updated>maxU)maxU=r.updated;
+        }
+        if(changed)ops.sort(byId);
+        S.since=maxU;
+      }
+      const dm2=dayMap();
+      for(const d in dm2){
+        if(pulled.has(d))continue;
+        const s=JSON.stringify(dm2[d]);
+        if(S.hashes[d]!==hash(s))toPush[d]={s,base:S.vers[d]||0};
+      }
+      let conflicts=[];
+      if(Object.keys(toPush).length)conflicts=await pushChunks(toPush);
+      if(changed){persist();render()}
+      if(!conflicts.length)break;
+      needPull=true;
+      if(round===3)pending=true;
     }
-    const cur=dayData(),ch={};
-    for(const d in cur){if(S.map[d]!==hash(cur[d]))ch[d]=cur[d]}
-    for(const d in S.map){if(!(d in cur))ch[d]=null}
-    await pushDays(ch,false);
-    S.dirty=false;S.last=Date.now();saveS();
-    $('cloudMsg').textContent=manual?'Sauvegardé en ligne ✔':'';
+    S.init=true;S.last=Date.now();
+    S.dirty=pending||chg!==seq0;
+    saveS();
+    $('cloudMsg').textContent=manual?(pending?'Synchronisation incomplète, nouvel essai bientôt.':(isMulti()?'Synchronisé ✔':'Sauvegardé en ligne ✔')):'';
+    if(S.dirty)scheduleSync();
   }catch(e){
     $('cloudMsg').textContent=e.status?('Sauvegarde en ligne : '+e.message):(manual?'Pas de connexion. Réessaie avec internet.':'');
     if(!e.status)scheduleSync();
   }finally{syncing=false;cloudUI();checkBk()}
 }
 async function restoreCloud(){
-  const all=[];let after='';
-  for(let i=0;i<500;i++){
-    const j=await cloud('get',{after,limit:30});
-    for(const r of j.rows){let a;try{a=JSON.parse(r.data)}catch(e){after=r.day;continue}if(Array.isArray(a)){for(const o of a)if(o&&o.date&&o.article&&o.qty>0)all.push(o)}after=r.day}
-    if(!j.more)break;
+  const rows=await pullAll(0);
+  const all=[],tb=[];
+  S.vers={};S.hashes={};
+  let maxU=0;
+  for(const r of rows){
+    let a;try{a=JSON.parse(r.data)}catch(e){continue}
+    if(!Array.isArray(a))continue;
+    for(const e of a){if(!e||e.id==null)continue;if(e.del)tb.push(e);else if(e.date&&e.article&&e.qty>0)all.push(e)}
+    S.vers[r.day]=r.ver||1;if(r.updated>maxU)maxU=r.updated;
   }
-  ops=all;
-  try{localStorage.setItem(KEY,JSON.stringify(ops))}catch(e){}
-  const cur=dayData();S.map={};for(const d in cur)S.map[d]=hash(cur[d]);
-  S.init=true;S.dirty=false;S.last=Date.now();saveS();
-  cloudBlocked=false;$('cloudAsk').hidden=true;
+  const dead=new Set(tb.map(t=>String(t.id)));
+  ops=all.filter(o=>!dead.has(String(o.id))).sort(byId);tomb=tb;
+  persist();
+  const dm=dayMap();for(const d in dm)S.hashes[d]=hash(JSON.stringify(dm[d]));
+  S.since=maxU;S.init=true;S.dirty=false;S.last=Date.now();saveS();
   render();
-  return all.length;
-}
-async function keepThisPhone(){
-  const cur=dayData();S.map={};S.init=true;saveS();
-  await pushDays(cur,true);
-  S.dirty=false;S.last=Date.now();saveS();
-  cloudBlocked=false;$('cloudAsk').hidden=true;cloudUI();checkBk();
+  return ops.length;
 }
 $('cloudNow').onclick=()=>syncNow(true);
 $('cloudRes').onclick=async()=>{
@@ -525,22 +568,12 @@ $('cloudRes').onclick=async()=>{
     $('cloudMsg').textContent='Restauré : '+n+' opération(s).';
   }catch(e){$('cloudMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
 };
-$('cloudAskYes').onclick=async()=>{
-  $('cloudAskMsg').textContent='En cours…';
-  try{
-    if(askMode==='choose'&&!confirm('Remplacer le cahier de ce téléphone par la sauvegarde en ligne ?'))return $('cloudAskMsg').textContent='';
-    const n=await restoreCloud();
-    $('cloudMsg').textContent='Restauré : '+n+' opération(s).';
-  }catch(e){$('cloudAskMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
-};
-$('cloudAskNo').onclick=async()=>{
-  if(askMode==='restore'){$('cloudAsk').hidden=true;return} // plus tard : rien n'est envoyé tant que tu n'as pas choisi
-  if(!confirm('Remplacer la sauvegarde en ligne par le contenu de ce téléphone ?'))return;
-  $('cloudAskMsg').textContent='En cours…';
-  try{await keepThisPhone()}catch(e){$('cloudAskMsg').textContent=e.status?('Erreur : '+e.message):'Pas de connexion. Réessaie avec internet.'}
-};
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.dirty&&!syncing&&S.init)syncNow()});
-window.addEventListener('online',()=>{if(S.dirty||!S.init)scheduleSync(2000)});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){if(S.dirty&&!syncing&&S.init)syncNow()}
+  else if(isMulti()&&S.init)syncNow();
+});
+window.addEventListener('online',()=>{if(S.dirty||!S.init||isMulti())scheduleSync(2000)});
+setInterval(()=>{if(isMulti()&&!document.hidden&&S.init)syncNow()},300000);
 
 /* ---------- Licence (inchangé) ---------- */
 const LK='cahier-licence-v1',DK='cahier-appareil-v1',DAY=864e5;
@@ -548,14 +581,14 @@ function devId(){let d=null;try{d=localStorage.getItem(DK)}catch(e){}
   if(!d){d=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);try{localStorage.setItem(DK,d)}catch(e){}}return d}
 function getLic(){try{return JSON.parse(localStorage.getItem(LK))}catch(e){return null}}
 function setLic(l){try{l?localStorage.setItem(LK,JSON.stringify(l)):localStorage.removeItem(LK)}catch(e){}}
-async function verify(key){const r=await fetch((window.API_BASE||'')+'/api/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,deviceId:devId()})});const j=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,error:j.error||'Erreur, réessaie.'}}
+async function verify(key){const r=await fetch((window.API_BASE||'')+'/api/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,deviceId:devId()})});const j=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,error:j.error||'Erreur, réessaie.',maxDevices:j.maxDevices||1}}
 function gate(m){$('app').hidden=true;$('gate').hidden=false;$('gMsg').textContent=m||''}
 function openApp(){$('gate').hidden=true;$('app').hidden=false;startCloud();try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}}
 async function boot(){
   const l=getLic();if(!l){gate();return}
-  if(Date.now()-l.checkedAt<DAY){openApp();return}
+  if(l.maxDevices!==undefined&&Date.now()-l.checkedAt<DAY){openApp();return}
   let r=null;try{r=await verify(l.key)}catch(e){}
-  if(r&&r.ok){l.checkedAt=Date.now();setLic(l);openApp()}
+  if(r&&r.ok){l.checkedAt=Date.now();l.maxDevices=r.maxDevices;setLic(l);openApp()}
   else if(r&&[403,404,409].includes(r.status)){setLic(null);gate(r.error)}
   else if(Date.now()-l.checkedAt<7*DAY)openApp();
   else gate('Connexion internet requise pour vérifier la licence.');
@@ -563,7 +596,7 @@ async function boot(){
 $('gGo').onclick=async()=>{
   const k=$('gKey').value.trim().toUpperCase();if(!k)return;
   $('gMsg').textContent='Vérification…';
-  try{const r=await verify(k);if(r.ok){setLic({key:k,checkedAt:Date.now()});openApp()}else $('gMsg').textContent=r.error}
+  try{const r=await verify(k);if(r.ok){setLic({key:k,checkedAt:Date.now(),maxDevices:r.maxDevices});openApp()}else $('gMsg').textContent=r.error}
   catch(e){$('gMsg').textContent='Pas de connexion. Réessaie avec internet.'}
 };
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
